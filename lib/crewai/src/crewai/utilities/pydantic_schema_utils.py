@@ -1020,12 +1020,26 @@ def _json_schema_to_pydantic_field(
     if isinstance(type_, type) and issubclass(type_, (int, float)):
         if "minimum" in json_schema:
             field_params["ge"] = json_schema["minimum"]
-        if "exclusiveMinimum" in json_schema:
-            field_params["gt"] = json_schema["exclusiveMinimum"]
+        exc_min = json_schema.get("exclusiveMinimum")
+        if exc_min is not None:
+            if isinstance(exc_min, bool):
+                # JSON Schema draft 4 / OpenAPI 3.0: boolean that tightens minimum
+                if exc_min and "minimum" in json_schema:
+                    field_params.pop("ge", None)
+                    field_params["gt"] = json_schema["minimum"]
+            else:
+                field_params["gt"] = exc_min
         if "maximum" in json_schema:
             field_params["le"] = json_schema["maximum"]
-        if "exclusiveMaximum" in json_schema:
-            field_params["lt"] = json_schema["exclusiveMaximum"]
+        exc_max = json_schema.get("exclusiveMaximum")
+        if exc_max is not None:
+            if isinstance(exc_max, bool):
+                # JSON Schema draft 4 / OpenAPI 3.0: boolean that tightens maximum
+                if exc_max and "maximum" in json_schema:
+                    field_params.pop("le", None)
+                    field_params["lt"] = json_schema["maximum"]
+            else:
+                field_params["lt"] = exc_max
         if "multipleOf" in json_schema:
             field_params["multiple_of"] = json_schema["multipleOf"]
 
