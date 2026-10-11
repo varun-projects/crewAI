@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import TYPE_CHECKING, Any, Final, Literal, cast
 
 from pydantic import BaseModel, Field
@@ -102,6 +103,32 @@ FUNCTION_SCHEMA: Final[dict[str, Any]] = {
         },
     },
 }
+
+
+def _detect_ready(text: str) -> bool:
+    """Detect whether *text* signals that the agent is ready to execute.
+
+    Handles the legacy full sentence as well as bare ``READY`` variants emitted
+    by local models (Ollama, vLLM, etc.), lowercase, and Markdown-emphasised
+    forms such as ``**READY**``.  Last-verdict-wins semantics apply: if the text
+    contains both ``NOT READY`` and ``READY``, whichever appears last wins.
+
+    Args:
+        text: The LLM response to inspect.
+
+    Returns:
+        ``True`` if the last READY verdict is *not* negated by ``NOT``.
+    """
+    if not text:
+        return False
+    # Strip markdown bold/italic markers before matching
+    cleaned = re.sub(r"\*+|_{2,}", "", text)
+    # Find all READY / NOT READY mentions; last one wins
+    matches = list(re.finditer(r"\b(NOT\s+)?READY\b", cleaned, re.IGNORECASE))
+    if not matches:
+        return False
+    last = matches[-1]
+    return last.group(1) is None  # No "NOT " prefix → ready
 
 
 class AgentReasoning:
@@ -411,7 +438,7 @@ class AgentReasoning:
             return (
                 response_str,
                 [],
-                "READY: I am ready to execute the task." in response_str,
+                _detect_ready(response_str),
             )
 
         except HookAborted:
@@ -437,7 +464,7 @@ class AgentReasoning:
                 return (
                     fallback_str,
                     [],
-                    "READY: I am ready to execute the task." in fallback_str,
+                    _detect_ready(fallback_str),
                 )
             except HookAborted:
                 raise
@@ -599,7 +626,7 @@ class AgentReasoning:
             return "No plan was generated.", False
 
         plan = response
-        ready = "READY: I am ready to execute the task." in response
+        ready = _detect_ready(response)
 
         return plan, ready
 
